@@ -1,4 +1,4 @@
-Source: oil-nvim
+Source: oil.nvim
 Section: editors
 Priority: optional
 Maintainer: Dimitry Ishenko <dimitry.ishenko@gmail.com>
@@ -7,14 +7,15 @@ Build-Depends:
  dh-vim-addon,
 Standards-Version: 4.6.2
 Homepage: https://github.com/stevearc/oil.nvim
-Vcs-Browser: https://github.com/dimitry-ishenko-vim/oil-nvim
-Vcs-Git: https://github.com/dimitry-ishenko-vim/oil-nvim.git
+Vcs-Browser: https://github.com/dimitry-ishenko-vim/neovim-oil
+Vcs-Git: https://github.com/dimitry-ishenko-vim/neovim-oil.git
 Rules-Requires-Root: no
 
-Package: oil-nvim
+Package: neovim-oil
 Architecture: all
 Depends:
  ${misc:Depends},
+ ${vim-addon:Depends},
  neovim (>= 0.8),
 Description: Neovim file explorer
  Edit your filesystem like a buffer.

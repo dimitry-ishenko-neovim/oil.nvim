@@ -1,2 +1,1 @@
-doc lua syntax usr/share/oil-nvim
-debian/oil.lua etc/skel/.config/nvim/plugin
+doc lua syntax usr/share/neovim-oil
