@@ -1,3 +1,10 @@
+oil.nvim (2.15.0-5) unstable; urgency=medium
+
+  * Add Debian Release workflow
+  * d/control: update links
+
+ -- Dimitry Ishenko <dimitry.ishenko@gmail.com>  Tue, 07 Apr 2026 15:35:03 -0400
+
 oil.nvim (2.15.0-4) unstable; urgency=medium
 
   * oil-nvim => neovim-oil
