@@ -68,24 +68,34 @@ local function get_matching_paths(client, filters, paths)
       end
 
       -- Some language servers use forward slashes as path separators on Windows (LuaLS)
-      if fs.is_windows then
+      -- We no longer need this after 0.12: https://github.com/neovim/neovim/commit/322a6d305d088420b23071c227af07b7c1beb41a
+      if vim.fn.has("nvim-0.12") == 0 and fs.is_windows then
         glob = glob:gsub("/", "\\")
       end
 
       ---@type string|vim.lpeg.Pattern
       local glob_to_match = glob
       if vim.glob and vim.glob.to_lpeg then
-        -- HACK around https://github.com/neovim/neovim/issues/28931
-        -- find alternations and sort them by length to try to match the longest first
-        if vim.fn.has("nvim-0.11") == 0 then
-          glob = glob:gsub("{(.*)}", function(s)
-            local pieces = vim.split(s, ",")
-            table.sort(pieces, function(a, b)
+        glob = glob:gsub("{(.-)}", function(s)
+          local patterns = vim.split(s, ",")
+          local filtered = {}
+          for _, pat in ipairs(patterns) do
+            if pat ~= "" then
+              table.insert(filtered, pat)
+            end
+          end
+          if #filtered == 0 then
+            return ""
+          end
+          -- HACK around https://github.com/neovim/neovim/issues/28931
+          -- find alternations and sort them by length to try to match the longest first
+          if vim.fn.has("nvim-0.11") == 0 then
+            table.sort(filtered, function(a, b)
               return a:len() > b:len()
             end)
-            return "{" .. table.concat(pieces, ",") .. "}"
-          end)
-        end
+          end
+          return "{" .. table.concat(filtered, ",") .. "}"
+        end)
 
         glob_to_match = vim.glob.to_lpeg(glob)
       end
@@ -167,8 +177,13 @@ local function will_file_operation(method, capability_name, files, options)
           }
         end, matching_files),
       }
-      ---@diagnostic disable-next-line: invisible
-      local result, err = client.request_sync(method, params, options.timeout_ms or 1000, 0)
+      local result, err
+      if vim.fn.has("nvim-0.11") == 1 then
+        result, err = client:request_sync(method, params, options.timeout_ms or 1000, 0)
+      else
+        ---@diagnostic disable-next-line: param-type-mismatch
+        result, err = client.request_sync(method, params, options.timeout_ms or 1000, 0)
+      end
       if result and result.result then
         if options.apply_edits ~= false then
           vim.lsp.util.apply_workspace_edit(result.result, client.offset_encoding)
@@ -204,8 +219,12 @@ local function did_file_operation(method, capability_name, files)
           }
         end, matching_files),
       }
-      ---@diagnostic disable-next-line: invisible
-      client.notify(method, params)
+      if vim.fn.has("nvim-0.11") == 1 then
+        client:notify(method, params)
+      else
+        ---@diagnostic disable-next-line: param-type-mismatch
+        client.notify(method, params)
+      end
     end
   end
 end
@@ -280,9 +299,15 @@ function M.will_rename_files(files, options)
           }
         end, matching_files),
       }
-      local result, err =
-        ---@diagnostic disable-next-line: invisible
-        client.request_sync(ms.workspace_willRenameFiles, params, options.timeout_ms or 1000, 0)
+      local result, err
+      if vim.fn.has("nvim-0.11") == 1 then
+        result, err =
+          client:request_sync(ms.workspace_willRenameFiles, params, options.timeout_ms or 1000, 0)
+      else
+        result, err =
+          ---@diagnostic disable-next-line: param-type-mismatch
+          client.request_sync(ms.workspace_willRenameFiles, params, options.timeout_ms or 1000, 0)
+      end
       if result and result.result then
         if options.apply_edits ~= false then
           vim.lsp.util.apply_workspace_edit(result.result, client.offset_encoding)
@@ -313,8 +338,12 @@ function M.did_rename_files(files)
           }
         end, matching_files),
       }
-      ---@diagnostic disable-next-line: invisible
-      client.notify(ms.workspace_didRenameFiles, params)
+      if vim.fn.has("nvim-0.11") == 1 then
+        client:notify(ms.workspace_didRenameFiles, params)
+      else
+        ---@diagnostic disable-next-line: param-type-mismatch
+        client.notify(ms.workspace_didRenameFiles, params)
+      end
     end
   end
 end

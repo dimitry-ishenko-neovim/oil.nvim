@@ -37,10 +37,10 @@ local win_addslash = function(path)
 end
 
 ---@class oil.WindowsTrashInfo
----@field trash_file string?
----@field original_path string?
----@field deletion_date string?
----@field info_file string?
+---@field trash_file string
+---@field original_path string
+---@field deletion_date integer
+---@field info_file? string
 
 ---@param url string
 ---@param column_defs string[]
@@ -96,6 +96,7 @@ M.list = function(url, column_defs, cb)
           end
           cache_entry[FIELD_META] = {
             stat = nil,
+            ---@type oil.WindowsTrashInfo
             trash_info = {
               trash_file = entry.Path,
               original_path = entry.OriginalPath,
@@ -265,7 +266,7 @@ M.render_action = function(action)
     local entry = assert(cache.get_entry_by_url(action.url))
     local meta = entry[FIELD_META]
     ---@type oil.WindowsTrashInfo
-    local trash_info = meta and meta.trash_info
+    local trash_info = assert(meta).trash_info
     local short_path = fs.shorten_path(trash_info.original_path)
     return string.format(" PURGE %s", short_path)
   elseif action.type == "move" then

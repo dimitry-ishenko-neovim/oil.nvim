@@ -30,8 +30,6 @@ local M = {}
 ---@field filter_action? fun(action: oil.Action): boolean When present, filter out actions as they are created
 ---@field filter_error? fun(action: oil.ParseError): boolean When present, filter out errors from parsing a buffer
 
-local load_oil_buffer
-
 ---Get the entry on a specific line (1-indexed)
 ---@param bufnr integer
 ---@param lnum integer
@@ -224,7 +222,7 @@ M.get_buffer_parent_url = function(bufname, use_oil_parent)
     if not use_oil_parent then
       return bufname
     end
-    local adapter = config.get_adapter_by_scheme(scheme)
+    local adapter = assert(config.get_adapter_by_scheme(scheme))
     local parent_url
     if adapter and adapter.get_parent then
       local adapter_scheme = config.adapter_to_scheme[adapter.name]
@@ -344,11 +342,16 @@ end
 
 ---Open oil browser in a floating window, or close it if open
 ---@param dir nil|string When nil, open the parent of the current buffer, or the cwd if current buffer is not a file
-M.toggle_float = function(dir)
+---@param opts? oil.OpenOpts
+---@param cb? fun() Called after the oil buffer is ready
+M.toggle_float = function(dir, opts, cb)
   if vim.w.is_oil_win then
     M.close()
+    if cb then
+      cb()
+    end
   else
-    M.open_float(dir)
+    M.open_float(dir, opts, cb)
   end
 end
 
@@ -545,6 +548,8 @@ M.open_preview = function(opts, callback)
   end
 
   util.get_edit_path(bufnr, entry, function(normalized_url)
+    local mc = package.loaded["multicursor-nvim"]
+    local has_multicursors = mc and mc.hasCursors()
     local is_visual_mode = util.is_visual_mode()
     if preview_win then
       if is_visual_mode then
@@ -593,7 +598,7 @@ M.open_preview = function(opts, callback)
     -- If we called open_preview during an autocmd, then the edit command may not trigger the
     -- BufReadCmd to load the buffer. So we need to do it manually.
     if util.is_oil_bufnr(filebufnr) then
-      load_oil_buffer(filebufnr)
+      M.load_oil_buffer(filebufnr)
     end
 
     vim.api.nvim_set_option_value("previewwindow", true, { scope = "local", win = 0 })
@@ -603,7 +608,10 @@ M.open_preview = function(opts, callback)
     end
     vim.w.oil_entry_id = entry.id
     vim.w.oil_source_win = prev_win
-    if is_visual_mode then
+    if has_multicursors then
+      hack_set_win(prev_win)
+      mc.restoreCursors()
+    elseif is_visual_mode then
       hack_set_win(prev_win)
       -- Restore the visual selection
       vim.cmd.normal({ args = { "gv" }, bang = true })
@@ -620,6 +628,7 @@ end
 ---@field split? "aboveleft"|"belowright"|"topleft"|"botright" Split modifier
 ---@field tab? boolean Open the buffer in a new tab
 ---@field close? boolean Close the original oil buffer once selection is made
+---@field handle_buffer_callback? fun(buf_id: integer) If defined, all other buffer related options here would be ignored. This callback allows you to take over the process of opening the buffer yourself.
 
 ---Select the entry under the cursor
 ---@param opts nil|oil.SelectOpts
@@ -754,18 +763,24 @@ M.select = function(opts, callback)
       local cmd = "buffer"
       if opts.tab then
         vim.cmd.tabnew({ mods = mods })
+        -- Make sure the new buffer from tabnew gets cleaned up
+        vim.bo.bufhidden = "wipe"
       elseif opts.split then
         cmd = "sbuffer"
       end
-      ---@diagnostic disable-next-line: param-type-mismatch
-      local ok, err = pcall(vim.cmd, {
-        cmd = cmd,
-        args = { filebufnr },
-        mods = mods,
-      })
-      -- Ignore swapfile errors
-      if not ok and err and not err:match("^Vim:E325:") then
-        vim.api.nvim_echo({ { err, "Error" } }, true, {})
+      if opts.handle_buffer_callback ~= nil then
+        opts.handle_buffer_callback(filebufnr)
+      else
+        ---@diagnostic disable-next-line: param-type-mismatch
+        local ok, err = pcall(vim.cmd, {
+          cmd = cmd,
+          args = { filebufnr },
+          mods = mods,
+        })
+        -- Ignore swapfile errors
+        if not ok and err and not err:match("^Vim:E325:") then
+          vim.api.nvim_echo({ { err, "Error" } }, true, {})
+        end
       end
 
       open_next_entry(cb)
@@ -798,9 +813,6 @@ local function maybe_hijack_directory_buffer(bufnr)
   local config = require("oil.config")
   local fs = require("oil.fs")
   local util = require("oil.util")
-  if not config.default_file_explorer then
-    return false
-  end
   local bufname = vim.api.nvim_buf_get_name(bufnr)
   if bufname == "" then
     return false
@@ -818,6 +830,11 @@ end
 ---@private
 M._get_highlights = function()
   return {
+    {
+      name = "OilEmpty",
+      link = "Comment",
+      desc = "Empty column values",
+    },
     {
       name = "OilHidden",
       link = "Comment",
@@ -1013,8 +1030,9 @@ local function restore_alt_buf()
   end
 end
 
+---@private
 ---@param bufnr integer
-load_oil_buffer = function(bufnr)
+M.load_oil_buffer = function(bufnr)
   local config = require("oil.config")
   local keymap_util = require("oil.keymap_util")
   local loading = require("oil.loading")
@@ -1117,9 +1135,9 @@ M.setup = function(opts)
 
   config.setup(opts)
   set_colors()
-  vim.api.nvim_create_user_command("Oil", function(args)
+  local callback = function(args)
     local util = require("oil.util")
-    if args.smods.tab == 1 then
+    if args.smods.tab > 0 then
       vim.cmd.tabnew()
     end
     local float = false
@@ -1152,11 +1170,13 @@ M.setup = function(opts)
       end
     end
 
-    if not float and (args.smods.vertical or args.smods.split ~= "") then
+    if not float and (args.smods.vertical or args.smods.horizontal or args.smods.split ~= "") then
+      local range = args.count > 0 and { args.count } or nil
+      local cmdargs = { mods = { split = args.smods.split }, range = range }
       if args.smods.vertical then
-        vim.cmd.vsplit({ mods = { split = args.smods.split } })
+        vim.cmd.vsplit(cmdargs)
       else
-        vim.cmd.split({ mods = { split = args.smods.split } })
+        vim.cmd.split(cmdargs)
       end
     end
 
@@ -1172,7 +1192,12 @@ M.setup = function(opts)
       open_opts.preview = {}
     end
     M[method](path, open_opts)
-  end, { desc = "Open oil file browser on a directory", nargs = "*", complete = "dir" })
+  end
+  vim.api.nvim_create_user_command(
+    "Oil",
+    callback,
+    { desc = "Open oil file browser on a directory", nargs = "*", complete = "dir", count = true }
+  )
   local aug = vim.api.nvim_create_augroup("Oil", {})
 
   if config.default_file_explorer then
@@ -1218,7 +1243,7 @@ M.setup = function(opts)
     pattern = scheme_pattern,
     nested = true,
     callback = function(params)
-      load_oil_buffer(params.buf)
+      M.load_oil_buffer(params.buf)
     end,
   })
   vim.api.nvim_create_autocmd("BufWriteCmd", {
@@ -1253,8 +1278,7 @@ M.setup = function(opts)
         end)
         vim.cmd.doautocmd({ args = { "BufWritePost", params.file }, mods = { silent = true } })
       else
-        local adapter = config.get_adapter_by_scheme(bufname)
-        assert(adapter)
+        local adapter = assert(config.get_adapter_by_scheme(bufname))
         adapter.write_file(params.buf)
       end
     end,
@@ -1281,7 +1305,10 @@ M.setup = function(opts)
       local util = require("oil.util")
       local bufname = vim.api.nvim_buf_get_name(0)
       local scheme = util.parse_url(bufname)
-      if scheme and config.adapters[scheme] then
+      local is_oil_buf = scheme and config.adapters[scheme]
+      -- We want to filter out oil buffers that are not directories (i.e. ssh files)
+      local is_oil_dir_or_unknown = (vim.bo.filetype == "oil" or vim.bo.filetype == "")
+      if is_oil_buf and is_oil_dir_or_unknown then
         local view = require("oil.view")
         view.maybe_set_cursor()
         -- While we are in an oil buffer, set the alternate file to the buffer we were in prior to
@@ -1367,15 +1394,7 @@ M.setup = function(opts)
       vim.w.oil_original_alternate = vim.w[parent_win].oil_original_alternate
     end,
   })
-  vim.api.nvim_create_autocmd("BufAdd", {
-    desc = "Detect directory buffer and open oil file browser",
-    group = aug,
-    pattern = "*",
-    nested = true,
-    callback = function(params)
-      maybe_hijack_directory_buffer(params.buf)
-    end,
-  })
+
   -- mksession doesn't save oil buffers in a useful way. We have to manually load them after a
   -- session finishes loading. See https://github.com/stevearc/oil.nvim/issues/29
   vim.api.nvim_create_autocmd("SessionLoadPost", {
@@ -1389,16 +1408,28 @@ M.setup = function(opts)
       local util = require("oil.util")
       local scheme = util.parse_url(params.file)
       if config.adapters[scheme] and vim.api.nvim_buf_line_count(params.buf) == 1 then
-        load_oil_buffer(params.buf)
+        M.load_oil_buffer(params.buf)
       end
     end,
   })
 
-  local bufnr = vim.api.nvim_get_current_buf()
-  if maybe_hijack_directory_buffer(bufnr) and vim.v.vim_did_enter == 1 then
-    -- manually call load on a hijacked directory buffer if vim has already entered
-    -- (the BufReadCmd will not trigger)
-    load_oil_buffer(bufnr)
+  if config.default_file_explorer then
+    vim.api.nvim_create_autocmd("BufAdd", {
+      desc = "Detect directory buffer and open oil file browser",
+      group = aug,
+      pattern = "*",
+      nested = true,
+      callback = function(params)
+        maybe_hijack_directory_buffer(params.buf)
+      end,
+    })
+
+    local bufnr = vim.api.nvim_get_current_buf()
+    if maybe_hijack_directory_buffer(bufnr) and vim.v.vim_did_enter == 1 then
+      -- manually call load on a hijacked directory buffer if vim has already entered
+      -- (the BufReadCmd will not trigger)
+      M.load_oil_buffer(bufnr)
+    end
   end
 end
 

@@ -11,7 +11,7 @@
 - [toggle_hidden()](#toggle_hidden)
 - [get_current_dir(bufnr)](#get_current_dirbufnr)
 - [open_float(dir, opts, cb)](#open_floatdir-opts-cb)
-- [toggle_float(dir)](#toggle_floatdir)
+- [toggle_float(dir, opts, cb)](#toggle_floatdir-opts-cb)
 - [open(dir, opts, cb)](#opendir-opts-cb)
 - [close(opts)](#closeopts)
 - [open_preview(opts, callback)](#open_previewopts-callback)
@@ -107,14 +107,20 @@ Open oil browser in a floating window
 | >>split      | `nil\|"aboveleft"\|"belowright"\|"topleft"\|"botright"` | Split modifier                                                                              |
 | cb           | `nil\|fun()`                                            | Called after the oil buffer is ready                                                        |
 
-## toggle_float(dir)
+## toggle_float(dir, opts, cb)
 
-`toggle_float(dir)` \
+`toggle_float(dir, opts, cb)` \
 Open oil browser in a floating window, or close it if open
 
-| Param | Type          | Desc                                                                                        |
-| ----- | ------------- | ------------------------------------------------------------------------------------------- |
-| dir   | `nil\|string` | When nil, open the parent of the current buffer, or the cwd if current buffer is not a file |
+| Param        | Type                                                    | Desc                                                                                        |
+| ------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| dir          | `nil\|string`                                           | When nil, open the parent of the current buffer, or the cwd if current buffer is not a file |
+| opts         | `nil\|oil.OpenOpts`                                     |                                                                                             |
+| >preview     | `nil\|oil.OpenPreviewOpts`                              | When present, open the preview window after opening oil                                     |
+| >>vertical   | `nil\|boolean`                                          | Open the buffer in a vertical split                                                         |
+| >>horizontal | `nil\|boolean`                                          | Open the buffer in a horizontal split                                                       |
+| >>split      | `nil\|"aboveleft"\|"belowright"\|"topleft"\|"botright"` | Split modifier                                                                              |
+| cb           | `nil\|fun()`                                            | Called after the oil buffer is ready                                                        |
 
 ## open(dir, opts, cb)
 
@@ -159,15 +165,16 @@ Preview the entry under the cursor in a split
 `select(opts, callback)` \
 Select the entry under the cursor
 
-| Param       | Type                                                    | Desc                                                 |
-| ----------- | ------------------------------------------------------- | ---------------------------------------------------- |
-| opts        | `nil\|oil.SelectOpts`                                   |                                                      |
-| >vertical   | `nil\|boolean`                                          | Open the buffer in a vertical split                  |
-| >horizontal | `nil\|boolean`                                          | Open the buffer in a horizontal split                |
-| >split      | `nil\|"aboveleft"\|"belowright"\|"topleft"\|"botright"` | Split modifier                                       |
-| >tab        | `nil\|boolean`                                          | Open the buffer in a new tab                         |
-| >close      | `nil\|boolean`                                          | Close the original oil buffer once selection is made |
-| callback    | `nil\|fun(err: nil\|string)`                            | Called once all entries have been opened             |
+| Param                   | Type                                                    | Desc                                                                                                                                                  |
+| ----------------------- | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| opts                    | `nil\|oil.SelectOpts`                                   |                                                                                                                                                       |
+| >vertical               | `nil\|boolean`                                          | Open the buffer in a vertical split                                                                                                                   |
+| >horizontal             | `nil\|boolean`                                          | Open the buffer in a horizontal split                                                                                                                 |
+| >split                  | `nil\|"aboveleft"\|"belowright"\|"topleft"\|"botright"` | Split modifier                                                                                                                                        |
+| >tab                    | `nil\|boolean`                                          | Open the buffer in a new tab                                                                                                                          |
+| >close                  | `nil\|boolean`                                          | Close the original oil buffer once selection is made                                                                                                  |
+| >handle_buffer_callback | `nil\|fun(buf_id: integer)`                             | If defined, all other buffer related options here would be ignored. This callback allows you to take over the process of opening the buffer yourself. |
+| callback                | `nil\|fun(err: nil\|string)`                            | Called once all entries have been opened                                                                                                              |
 
 ## save(opts, cb)
 

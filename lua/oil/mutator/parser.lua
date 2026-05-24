@@ -95,7 +95,7 @@ M.parse_line = function(adapter, line, column_defs)
     local name = util.split_config(def)
     local range = { start }
     local start_len = string.len(rem)
-    value, rem = columns.parse_col(adapter, rem, def)
+    value, rem = columns.parse_col(adapter, assert(rem), def)
     if not rem then
       return nil, string.format("Parsing %s failed", name)
     end
@@ -156,7 +156,7 @@ M.parse = function(bufnr)
   ---@type oil.ParseError[]
   local errors = {}
   local bufname = vim.api.nvim_buf_get_name(bufnr)
-  local adapter = util.get_adapter(bufnr)
+  local adapter = util.get_adapter(bufnr, true)
   if not adapter then
     table.insert(errors, {
       lnum = 0,

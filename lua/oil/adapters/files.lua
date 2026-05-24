@@ -6,7 +6,6 @@ local fs = require("oil.fs")
 local git = require("oil.git")
 local log = require("oil.log")
 local permissions = require("oil.adapters.files.permissions")
-local trash = require("oil.adapters.files.trash")
 local util = require("oil.util")
 local uv = vim.uv or vim.loop
 
@@ -183,7 +182,17 @@ for _, time_key in ipairs({ "ctime", "mtime", "atime", "birthtime" }) do
         -- Replace placeholders with a pattern that matches non-space characters (e.g. %H -> %S+)
         -- and whitespace with a pattern that matches any amount of whitespace
         -- e.g. "%b %d %Y" -> "%S+%s+%S+%s+%S+"
-        pattern = fmt:gsub("%%.", "%%S+"):gsub("%s+", "%%s+")
+        pattern = fmt
+          :gsub("%%.", "%%S+")
+          :gsub("%s+", "%%s+")
+          -- escape `()[]` because those are special characters in Lua patterns
+          :gsub(
+            "%(",
+            "%%("
+          )
+          :gsub("%)", "%%)")
+          :gsub("%[", "%%[")
+          :gsub("%]", "%%]")
       else
         pattern = "%S+%s+%d+%s+%d%d:?%d%d"
       end
@@ -267,7 +276,7 @@ M.normalize_url = function(url, callback)
           local norm_path = util.addslash(fs.os_to_posix_path(realpath))
           callback(scheme .. norm_path)
         else
-          callback(realpath)
+          callback(vim.fn.fnamemodify(realpath, ":."))
         end
       end)
     )
@@ -530,7 +539,7 @@ M.render_action = function(action)
       return string.format("DELETE %s", short_path)
     end
   elseif action.type == "move" or action.type == "copy" then
-    local dest_adapter = config.get_adapter_by_scheme(action.dest_url)
+    local dest_adapter = assert(config.get_adapter_by_scheme(action.dest_url))
     if dest_adapter == M then
       local _, src_path = util.parse_url(action.src_url)
       assert(src_path)
@@ -610,20 +619,12 @@ M.perform_action = function(action, cb)
     end
 
     if config.delete_to_trash then
-      if config.trash_command then
-        vim.notify_once(
-          "Oil now has native support for trash. Remove the `trash_command` from your config to try it out!",
-          vim.log.levels.WARN
-        )
-        trash.recursive_delete(path, cb)
-      else
-        require("oil.adapters.trash").delete_to_trash(path, cb)
-      end
+      require("oil.adapters.trash").delete_to_trash(path, cb)
     else
       fs.recursive_delete(action.entry_type, path, cb)
     end
   elseif action.type == "move" then
-    local dest_adapter = config.get_adapter_by_scheme(action.dest_url)
+    local dest_adapter = assert(config.get_adapter_by_scheme(action.dest_url))
     if dest_adapter == M then
       local _, src_path = util.parse_url(action.src_url)
       assert(src_path)
@@ -641,7 +642,7 @@ M.perform_action = function(action, cb)
       cb("files adapter doesn't support cross-adapter move")
     end
   elseif action.type == "copy" then
-    local dest_adapter = config.get_adapter_by_scheme(action.dest_url)
+    local dest_adapter = assert(config.get_adapter_by_scheme(action.dest_url))
     if dest_adapter == M then
       local _, src_path = util.parse_url(action.src_url)
       assert(src_path)

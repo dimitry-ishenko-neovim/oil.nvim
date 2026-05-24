@@ -25,46 +25,63 @@ M.escape_filename = function(filename)
   return ret
 end
 
-local _url_escape_chars = {
-  [" "] = "%20",
-  ["$"] = "%24",
-  ["&"] = "%26",
-  ["`"] = "%60",
-  [":"] = "%3A",
-  ["<"] = "%3C",
-  ["="] = "%3D",
-  [">"] = "%3E",
-  ["?"] = "%3F",
-  ["["] = "%5B",
-  ["\\"] = "%5C",
-  ["]"] = "%5D",
-  ["^"] = "%5E",
-  ["{"] = "%7B",
-  ["|"] = "%7C",
-  ["}"] = "%7D",
-  ["~"] = "%7E",
-  ["“"] = "%22",
-  ["‘"] = "%27",
-  ["+"] = "%2B",
-  [","] = "%2C",
-  ["#"] = "%23",
-  ["%"] = "%25",
-  ["@"] = "%40",
-  ["/"] = "%2F",
-  [";"] = "%3B",
+local _url_escape_to_char = {
+  ["20"] = " ",
+  ["22"] = "“",
+  ["23"] = "#",
+  ["24"] = "$",
+  ["25"] = "%",
+  ["26"] = "&",
+  ["27"] = "‘",
+  ["2B"] = "+",
+  ["2C"] = ",",
+  ["2F"] = "/",
+  ["3A"] = ":",
+  ["3B"] = ";",
+  ["3C"] = "<",
+  ["3D"] = "=",
+  ["3E"] = ">",
+  ["3F"] = "?",
+  ["40"] = "@",
+  ["5B"] = "[",
+  ["5C"] = "\\",
+  ["5D"] = "]",
+  ["5E"] = "^",
+  ["60"] = "`",
+  ["7B"] = "{",
+  ["7C"] = "|",
+  ["7D"] = "}",
+  ["7E"] = "~",
 }
+local _char_to_url_escape = {}
+for k, v in pairs(_url_escape_to_char) do
+  _char_to_url_escape[v] = "%" .. k
+end
+-- TODO this uri escape handling is very incomplete
+
 ---@param string string
 ---@return string
 M.url_escape = function(string)
-  return (string:gsub(".", _url_escape_chars))
+  return (string:gsub(".", _char_to_url_escape))
+end
+
+---@param string string
+---@return string
+M.url_unescape = function(string)
+  return (
+    string:gsub("%%([0-9A-Fa-f][0-9A-Fa-f])", function(seq)
+      return _url_escape_to_char[seq:upper()] or ("%" .. seq)
+    end)
+  )
 end
 
 ---@param bufnr integer
+---@param silent? boolean
 ---@return nil|oil.Adapter
-M.get_adapter = function(bufnr)
+M.get_adapter = function(bufnr, silent)
   local bufname = vim.api.nvim_buf_get_name(bufnr)
   local adapter = config.get_adapter_by_scheme(bufname)
-  if not adapter then
+  if not adapter and not silent then
     vim.notify_once(
       string.format("[oil] could not find adapter for buffer '%s://'", bufname),
       vim.log.levels.ERROR
@@ -74,34 +91,28 @@ M.get_adapter = function(bufnr)
 end
 
 ---@param text string
----@param length nil|integer
----@return string
-M.rpad = function(text, length)
-  if not length then
-    return text
+---@param width integer|nil
+---@param align oil.ColumnAlign
+---@return string padded_text
+---@return integer left_padding
+M.pad_align = function(text, width, align)
+  if not width then
+    return text, 0
   end
-  local textlen = vim.api.nvim_strwidth(text)
-  local delta = length - textlen
-  if delta > 0 then
-    return text .. string.rep(" ", delta)
-  else
-    return text
+  local text_width = vim.api.nvim_strwidth(text)
+  local total_pad = width - text_width
+  if total_pad <= 0 then
+    return text, 0
   end
-end
 
----@param text string
----@param length nil|integer
----@return string
-M.lpad = function(text, length)
-  if not length then
-    return text
-  end
-  local textlen = vim.api.nvim_strwidth(text)
-  local delta = length - textlen
-  if delta > 0 then
-    return string.rep(" ", delta) .. text
+  if align == "right" then
+    return string.rep(" ", total_pad) .. text, total_pad
+  elseif align == "center" then
+    local left_pad = math.floor(total_pad / 2)
+    local right_pad = total_pad - left_pad
+    return string.rep(" ", left_pad) .. text .. string.rep(" ", right_pad), left_pad
   else
-    return text
+    return text .. string.rep(" ", total_pad), 0
   end
 end
 
@@ -157,8 +168,10 @@ M.rename_buffer = function(src_bufnr, dest_buf_name)
     -- This will fail if the dest buf name already exists
     local ok = pcall(vim.api.nvim_buf_set_name, src_bufnr, dest_buf_name)
     if ok then
-      -- Renaming the buffer creates a new buffer with the old name. Find it and delete it.
-      vim.api.nvim_buf_delete(vim.fn.bufadd(bufname), {})
+      -- Renaming the buffer creates a new buffer with the old name.
+      -- Find it and try to delete it, but don't if the buffer is in a context
+      -- where Neovim doesn't allow buffer modifications.
+      pcall(vim.api.nvim_buf_delete, vim.fn.bufadd(bufname), {})
       if altbuf and vim.api.nvim_buf_is_valid(altbuf) then
         vim.fn.setreg("#", altbuf)
       end
@@ -295,11 +308,15 @@ M.split_config = function(name_or_config)
   end
 end
 
+---@alias oil.ColumnAlign "left"|"center"|"right"
+
 ---@param lines oil.TextChunk[][]
 ---@param col_width integer[]
+---@param col_align? oil.ColumnAlign[]
 ---@return string[]
 ---@return any[][] List of highlights {group, lnum, col_start, col_end}
-M.render_table = function(lines, col_width)
+M.render_table = function(lines, col_width, col_align)
+  col_align = col_align or {}
   local str_lines = {}
   local highlights = {}
   for _, cols in ipairs(lines) do
@@ -313,9 +330,12 @@ M.render_table = function(lines, col_width)
       else
         text = chunk
       end
-      text = M.rpad(text, col_width[i])
+
+      local unpadded_len = text:len()
+      local padding
+      text, padding = M.pad_align(text, col_width[i], col_align[i] or "left")
+
       table.insert(pieces, text)
-      local col_end = col + text:len() + 1
       if hl then
         if type(hl) == "table" then
           -- hl has the form { [1]: hl_name, [2]: col_start, [3]: col_end }[]
@@ -325,15 +345,15 @@ M.render_table = function(lines, col_width)
             table.insert(highlights, {
               sub_hl[1],
               #str_lines,
-              col + sub_hl[2],
-              col + sub_hl[3],
+              col + padding + sub_hl[2],
+              col + padding + sub_hl[3],
             })
           end
         else
-          table.insert(highlights, { hl, #str_lines, col, col_end })
+          table.insert(highlights, { hl, #str_lines, col + padding, col + padding + unpadded_len })
         end
       end
-      col = col_end
+      col = col + text:len() + 1
     end
     table.insert(str_lines, table.concat(pieces, " "))
   end
@@ -346,7 +366,12 @@ M.set_highlights = function(bufnr, highlights)
   local ns = vim.api.nvim_create_namespace("Oil")
   vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
   for _, hl in ipairs(highlights) do
-    vim.api.nvim_buf_add_highlight(bufnr, ns, unpack(hl))
+    local group, line, col_start, col_end = unpack(hl)
+    vim.api.nvim_buf_set_extmark(bufnr, ns, line, col_start, {
+      end_col = col_end,
+      hl_group = group,
+      strict = false,
+    })
   end
 end
 
@@ -500,10 +525,7 @@ end
 ---@return oil.Adapter
 ---@return nil|oil.CrossAdapterAction
 M.get_adapter_for_action = function(action)
-  local adapter = config.get_adapter_by_scheme(action.url or action.src_url)
-  if not adapter then
-    error("no adapter found")
-  end
+  local adapter = assert(config.get_adapter_by_scheme(action.url or action.src_url))
   if action.dest_url then
     local dest_adapter = assert(config.get_adapter_by_scheme(action.dest_url))
     if adapter ~= dest_adapter then
@@ -560,6 +582,7 @@ M.render_text = function(bufnr, text, opts)
     h_align = "center",
     v_align = "center",
   })
+  ---@cast opts table
   if not vim.api.nvim_buf_is_valid(bufnr) then
     return
   end
@@ -624,11 +647,7 @@ M.render_text = function(bufnr, text, opts)
   pcall(vim.api.nvim_buf_set_lines, bufnr, 0, -1, false, lines)
   vim.bo[bufnr].modifiable = false
   vim.bo[bufnr].modified = false
-  local ns = vim.api.nvim_create_namespace("Oil")
-  vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
-  for _, hl in ipairs(highlights) do
-    vim.api.nvim_buf_add_highlight(bufnr, ns, unpack(hl))
-  end
+  M.set_highlights(bufnr, highlights)
 end
 
 ---Run a function in the context of a full-editor window
@@ -656,8 +675,12 @@ end
 ---@param bufnr integer
 ---@return boolean
 M.is_oil_bufnr = function(bufnr)
-  if vim.bo[bufnr].filetype == "oil" then
+  local filetype = vim.bo[bufnr].filetype
+  if filetype == "oil" then
     return true
+  elseif filetype ~= "" then
+    -- If the filetype is set and is NOT "oil", then it's not an oil buffer
+    return false
   end
   local scheme = M.parse_url(vim.api.nvim_buf_get_name(bufnr))
   return config.adapters[scheme] or config.adapter_aliases[scheme]
@@ -802,11 +825,12 @@ M.send_to_quickfix = function(opts)
   local action = opts.action == "a" and "a" or "r"
   if opts.target == "loclist" then
     vim.fn.setloclist(0, {}, action, { title = qf_title, items = qf_entries })
+    vim.cmd.lopen()
   else
     vim.fn.setqflist({}, action, { title = qf_title, items = qf_entries })
+    vim.cmd.copen()
   end
   vim.api.nvim_exec_autocmds("QuickFixCmdPost", {})
-  vim.cmd.copen()
 end
 
 ---@return boolean
@@ -887,7 +911,7 @@ M.get_edit_path = function(bufnr, entry, callback)
 
   local bufname = vim.api.nvim_buf_get_name(bufnr)
   local scheme, dir = M.parse_url(bufname)
-  local adapter = M.get_adapter(bufnr)
+  local adapter = M.get_adapter(bufnr, true)
   assert(scheme and dir and adapter)
 
   local url = scheme .. dir .. entry.name
@@ -944,8 +968,12 @@ M.read_file_to_scratch_buffer = function(path, preview_method)
   vim.bo[bufnr].bufhidden = "wipe"
   vim.bo[bufnr].buftype = "nofile"
 
-  local max_lines = preview_method == "fast_scratch" and vim.o.lines or nil
-  local has_lines, read_res = pcall(vim.fn.readfile, path, "", max_lines)
+  local has_lines, read_res
+  if preview_method == "fast_scratch" then
+    has_lines, read_res = pcall(vim.fn.readfile, path, "", vim.o.lines)
+  else
+    has_lines, read_res = pcall(vim.fn.readfile, path)
+  end
   local lines = has_lines and vim.split(table.concat(read_res, "\n"), "\n") or {}
 
   local ok = pcall(vim.api.nvim_buf_set_lines, bufnr, 0, -1, false, lines)

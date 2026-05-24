@@ -69,7 +69,7 @@ local default_config = {
     ["-"] = { "actions.parent", mode = "n" },
     ["_"] = { "actions.open_cwd", mode = "n" },
     ["`"] = { "actions.cd", mode = "n" },
-    ["~"] = { "actions.cd", opts = { scope = "tab" }, mode = "n" },
+    ["g~"] = { "actions.cd", opts = { scope = "tab" }, mode = "n" },
     ["gs"] = { "actions.change_sort", mode = "n" },
     ["gx"] = "actions.open_external",
     ["g."] = { "actions.toggle_hidden", mode = "n" },
@@ -107,6 +107,8 @@ local default_config = {
   },
   -- Extra arguments to pass to SCP when moving/copying files over SSH
   extra_scp_args = {},
+  -- Extra arguments to pass to aws s3 when creating/deleting/moving/copying files using aws s3
+  extra_s3_args = {},
   -- EXPERIMENTAL support for performing file operations with git
   git = {
     -- Return true to automatically git add/mv/rm files
@@ -127,7 +129,7 @@ local default_config = {
     -- max_width and max_height can be integers or a float between 0 and 1 (e.g. 0.4 for 40%)
     max_width = 0,
     max_height = 0,
-    border = "rounded",
+    border = nil,
     win_options = {
       winblend = 0,
     },
@@ -172,7 +174,7 @@ local default_config = {
     min_height = { 5, 0.1 },
     -- optionally define an integer/float for the exact height of the preview window
     height = nil,
-    border = "rounded",
+    border = nil,
     win_options = {
       winblend = 0,
     },
@@ -185,7 +187,7 @@ local default_config = {
     max_height = { 10, 0.9 },
     min_height = { 5, 0.1 },
     height = nil,
-    border = "rounded",
+    border = nil,
     minimized_border = "none",
     win_options = {
       winblend = 0,
@@ -193,20 +195,25 @@ local default_config = {
   },
   -- Configuration for the floating SSH window
   ssh = {
-    border = "rounded",
+    border = nil,
   },
   -- Configuration for the floating keymaps help window
   keymaps_help = {
-    border = "rounded",
+    border = nil,
   },
 }
 
 -- The adapter API hasn't really stabilized yet. We're not ready to advertise or encourage people to
 -- write their own adapters, and so there's no real reason to edit these config options. For that
 -- reason, I'm taking them out of the section above so they won't show up in the autogen docs.
+
+-- not "oil-s3://" on older neovim versions, since it doesn't open buffers correctly with a number
+-- in the name
+local oil_s3_string = vim.fn.has("nvim-0.12") == 1 and "oil-s3://" or "oil-sss://"
 default_config.adapters = {
   ["oil://"] = "files",
   ["oil-ssh://"] = "ssh",
+  [oil_s3_string] = "s3",
   ["oil-trash://"] = "trash",
 }
 default_config.adapter_aliases = {}
@@ -217,7 +224,6 @@ default_config.view_options.highlight_filename = nil
 ---@class oil.Config
 ---@field adapters table<string, string> Hidden from SetupOpts
 ---@field adapter_aliases table<string, string> Hidden from SetupOpts
----@field trash_command? string Deprecated option that we should clean up soon
 ---@field silence_scp_warning? boolean Undocumented option
 ---@field default_file_explorer boolean
 ---@field columns oil.ColumnSpec[]
@@ -234,6 +240,7 @@ default_config.view_options.highlight_filename = nil
 ---@field use_default_keymaps boolean
 ---@field view_options oil.ViewOptions
 ---@field extra_scp_args string[]
+---@field extra_s3_args string[]
 ---@field git oil.GitOptions
 ---@field float oil.FloatWindowConfig
 ---@field preview_win oil.PreviewWindowConfig
@@ -262,6 +269,7 @@ local M = {}
 ---@field use_default_keymaps? boolean Set to false to disable all of the above keymaps
 ---@field view_options? oil.SetupViewOptions Configure which files are shown and how they are shown.
 ---@field extra_scp_args? string[] Extra arguments to pass to SCP when moving/copying files over SSH
+---@field extra_s3_args? string[] Extra arguments to pass to aws s3 when moving/copying files using aws s3
 ---@field git? oil.SetupGitOptions EXPERIMENTAL support for performing file operations with git
 ---@field float? oil.SetupFloatWindowConfig Configuration for the floating window in oil.open_float
 ---@field preview_win? oil.SetupPreviewWindowConfig Configuration for the file preview window
@@ -394,13 +402,6 @@ local M = {}
 M.setup = function(opts)
   opts = opts or {}
 
-  if opts.trash_command then
-    vim.notify(
-      "[oil.nvim] trash_command is deprecated. Use built-in trash functionality instead (:help oil-trash).\nCompatibility will be removed on 2025-06-01.",
-      vim.log.levels.WARN
-    )
-  end
-
   local new_conf = vim.tbl_deep_extend("keep", opts, default_config)
   if not new_conf.use_default_keymaps then
     new_conf.keymaps = opts.keymaps or {}
@@ -410,6 +411,17 @@ M.setup = function(opts)
     for k, v in pairs(opts.keymaps) do
       new_conf.keymaps[k] = v
     end
+  end
+
+  -- Backwards compatibility for old versions that don't support winborder
+  if vim.fn.has("nvim-0.11") == 0 then
+    new_conf = vim.tbl_deep_extend("keep", new_conf, {
+      float = { border = "rounded" },
+      confirmation = { border = "rounded" },
+      progress = { border = "rounded" },
+      ssh = { border = "rounded" },
+      keymaps_help = { border = "rounded" },
+    })
   end
 
   -- Backwards compatibility. We renamed the 'preview' window config to be called 'confirmation'.
@@ -464,10 +476,6 @@ M.get_adapter_by_scheme = function(scheme)
   if adapter == nil then
     local name = M.adapters[scheme]
     if not name then
-      vim.notify(
-        string.format("Could not find oil adapter for scheme '%s'", scheme),
-        vim.log.levels.ERROR
-      )
       return nil
     end
     local ok
@@ -478,7 +486,6 @@ M.get_adapter_by_scheme = function(scheme)
     else
       M._adapter_by_scheme[scheme] = false
       adapter = false
-      vim.notify(string.format("Could not find oil adapter '%s'", name), vim.log.levels.ERROR)
     end
   end
   if adapter then
