@@ -1,3 +1,122 @@
+oil.nvim (2.16.0-1) unstable; urgency=medium
+
+  [ Dimitry Ishenko ]
+  * Merge tag 'v2.16.0'
+
+  [ github-actions[bot] ]
+  * chore(master): release 2.16.0 (#591)
+
+  [ Steven Arcangeli ]
+  * ci: drop nvim 0.8 from tests due to flakes
+  * ci: drop nvim 0.9 from tests due to flakes
+  * lint: apply stylua
+  * ci: bump action versions
+  * ci: move workflows to self-hosted-ubuntu
+  * lint: fix typecheck errors
+  * cleanup: remove deprecated trash_command
+  * ci: fix type error
+  * fix: don't apply oil window options to non-directory oil buffers
+  * lint: use more specific type for internal entries
+  * fix: scratch preview method (#628)
+  * fix: clean up empty buffer when opening in new tab (#616)
+  * doc: add a mention for third-party extension plugins
+  * ci: run tests against nvim 0.11
+  * doc: fix typecheck errors in nvim 0.11
+  * fix: file time column escapes ()[] chars in parser (#603)
+  * fix: better detection of oil buffers (#589)
+  * fix: silent handling when buffer has no oil adapter (#573)
+
+  [ malewicz1337 ]
+  * doc: add malewicz1337/oil-git.nvim to third-party extensions (#717)
+  * feat: add support for column text alignment (#711)
+
+  [ Eman Resu ]
+  * refactor: only create BufAdd autocmd if it's necessary (#720)
+
+  [ Luke Peterson ]
+  * doc: update Freedesktop Trash Specification URL (#722)
+
+  [ Github Actions ]
+  * [docgen] Update docs skip-checks: true
+  * [docgen] Update docs skip-checks: true
+  * [docgen] Update docs skip-checks: true
+  * [docgen] Update docs skip-checks: true
+  * [docgen] Update docs skip-checks: true
+
+  [ zeta-squared ]
+  * fix: add `open_float` params to `toggle_float` (#716)
+
+  [ Daniel Kongsgaard ]
+  * doc: fix s3 column descriptions (#715)
+  * feat: new adapter for S3 buckets (#677)
+
+  [ Sebastian Oberhoff ]
+  * fix: propagate errors in recursive_delete and recursive_copy (#712)
+
+  [ Ross ]
+  * feat: add horizontal scrolling actions (#709)
+
+  [ jake-stewart ]
+  * fix: multicursor when opened with --preview (#701)
+  * feat: support multicursor.nvim (#696)
+
+  [ Dominic Della Valle ]
+  * fix: handle empty LSP glob patterns (#702)
+
+  [ Muhammad Imaduddin ]
+  * fix: open files under cwd with relative name (#693)
+
+  [ phanium ]
+  * fix: args.count of 0 is not used as size (#695)
+  * fix: command modifiers for :Oil (#691)
+
+  [ Sebastian Lyng Johansen ]
+  * fix: use `g~` instead of overriding the builtin `~` mapping (#694)
+  * fix: change default border config to nil (#643)
+
+  [ Siggsy ]
+  * feat: add OilEmpty highlight group (#689)
+
+  [ Zijian ]
+  * fix: send_to_quickfix opens loclist when specified (#687)
+
+  [ Steve Walker ]
+  * feat(clipboard): pasting from system clipboard can delete original
+    (cut) (#649)
+  * feat: copy/paste to system clipboard (#559)
+
+  [ John Winston ]
+  * feat: add callback for handling buffer opening (#638)
+
+  [ Random Dude ]
+  * doc: mini.nvim has moved to new github organization (#663)
+
+  [ XeroOl ]
+  * fix: support natural ordering for numbers with >12 digits (#652)
+
+  [ Ben O'Mahony ]
+  * doc: add a mention to third party extension oil-git.nvim (#640)
+
+  [ jiz4oh ]
+  * fix: ssh adapter supports iso8601 dates (#635)
+
+  [ kaerum ]
+  * fix: glob formatting on windows in neovim nightly (#631)
+
+  [ Alexandros Alexiou ]
+  * fix: prevent E565 error when opening directories with nvim . (#608)
+
+  [ Shihua Zeng ]
+  * fix: indexing nil when env vars does not exist (#601)
+
+  [ Luis Calle ]
+  * fix(trash-win): don't hang when `shellslash` is enabled (#592)
+
+  [ skshetry ]
+  * fix: pass bufnr to constrain_cursor (#574)
+
+ -- Dimitry Ishenko <dimitry.ishenko@gmail.com>  Sun, 24 May 2026 18:14:56 -0400
+
 oil.nvim (2.15.0-5) unstable; urgency=medium
 
   * Add Debian Release workflow
