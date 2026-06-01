@@ -1,3 +1,9 @@
+oil.nvim (2.16.0-2) unstable; urgency=medium
+
+  * d/control: recommend neovim-web-devicons
+
+ -- Dimitry Ishenko <dimitry.ishenko@gmail.com>  Sun, 31 May 2026 20:36:58 -0400
+
 oil.nvim (2.16.0-1) unstable; urgency=medium
 
   [ Dimitry Ishenko ]
