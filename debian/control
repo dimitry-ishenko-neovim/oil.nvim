@@ -17,5 +17,7 @@ Depends:
  ${misc:Depends},
  ${vim-addon:Depends},
  neovim (>= 0.8),
+Recommends:
+ neovim-web-devicons,
 Description: Neovim file explorer
  Edit your filesystem like a buffer.
